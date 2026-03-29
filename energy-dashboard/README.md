@@ -1,16 +1,44 @@
-# React + Vite
+# IoT Energy Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern single-page dashboard (React + Vite) paired with an optional Flask API that interacts with an ADS1115 current/voltage sensing rig on a Raspberry Pi. The backend can also operate in a mock mode for local development when the hardware stack is unavailable.
 
-Currently, two official plugins are available:
+## Frontend (React)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+npm install
+npm run dev
+```
 
-## React Compiler
+Set `VITE_API_BASE` in a `.env` file if you need the UI to point to a non-default backend URL.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Backend API (Flask)
 
-## Expanding the ESLint configuration
+```bash
+cd server
+python -m venv .venv
+.venv\Scripts\activate  # use source .venv/bin/activate on Linux/macOS
+pip install -r requirements.txt
+python app.py
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The server listens on port `5000` by default. Add `ENERGY_API_FORCE_MOCK=1` to run without Raspberry Pi hardware. When deployed onto the Pi, the server will automatically use the real ADS1115 + relay stack if the dependencies are available.
+
+### Environment variables
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `VITE_API_BASE` | URL consumed by the React app. | `http://localhost:5000` |
+| `ENERGY_API_FORCE_MOCK` | Force mock sensor/relay logic (`1` or `0`). | `0` |
+| `ENERGY_API_POWER_LIMIT` | Overload cutoff in watts. | `500` |
+| `ENERGY_API_TARIFF` | Cost per kWh for cost calculations. | `8.5` |
+| `ENERGY_API_ALLOWED_ORIGINS` | CORS origin list passed to Flask-CORS. | `*` |
+
+### API surface
+
+| Route | Method | Description |
+| --- | --- | --- |
+| `/health` | GET | Simple readiness probe, returns the active monitor type. |
+| `/metrics` | GET | Returns voltage, current, power, energy, PF, cost, relay status, overload flag, and timestamp. |
+| `/control` | POST | Body `{ "target": "relay", "state": true }` toggles the relay and echoes fresh metrics. |
+
+Update the React client’s `src/services/api.js` if your deployment uses a static IP instead of the default localhost URL.

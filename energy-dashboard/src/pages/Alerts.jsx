@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { FiAlertTriangle, FiCheckCircle } from 'react-icons/fi';
-import { demoAlerts } from '../data/mockData';
 
 const severityStyles = {
   critical: 'border-rose-500/40 bg-rose-500/10 text-rose-100',
@@ -9,22 +8,12 @@ const severityStyles = {
 };
 
 export default function Alerts() {
-  const [alerts, setAlerts] = useState(() => demoAlerts());
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setAlerts((prev) =>
-        prev.map((alert, idx) => {
-          // Only adjust a couple of rows per tick to keep things steady
-          if (idx % 2 !== 0 && Math.random() > 0.6) return alert;
-          const statusFlip = Math.random() > 0.9;
-          const status = statusFlip ? (alert.status === 'Active' ? 'Resolved' : 'Active') : alert.status;
-          const time = statusFlip ? new Date().toLocaleTimeString() : alert.time;
-          return { ...alert, status, time };
-        })
-      );
-    }, 4000);
-    return () => clearInterval(interval);
+    // TODO: Fetch alerts from API endpoint
+    setLoading(false);
   }, []);
 
   return (
@@ -34,9 +23,13 @@ export default function Alerts() {
           <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Safety</p>
           <h3 className="text-xl font-semibold text-white">Alerts & Notifications</h3>
         </div>
-        <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">Demo Data</span>
       </div>
 
+      {loading ? (
+        <div className="text-center py-8 text-slate-400">Loading...</div>
+      ) : alerts.length === 0 ? (
+        <div className="text-center py-8 text-slate-400">No alerts at this time</div>
+      ) : (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {alerts.map((alert, idx) => (
           <div key={idx} className={`glass rounded-2xl border p-4 shadow-glow ${severityStyles[alert.severity]}`}>
@@ -62,6 +55,7 @@ export default function Alerts() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

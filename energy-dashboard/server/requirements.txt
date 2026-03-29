@@ -1,0 +1,8 @@
+Flask==3.0.0
+Flask-CORS==4.0.0
+numpy>=1.26.0
+python-dotenv>=1.0.0
+# Hardware packages (optional) - for real Raspberry Pi hardware:
+# Install via apt on Raspberry Pi (Python 3.11+):
+#   sudo apt install python3-rpi.gpio python3-numpy python3-pil
+# Or use older Python versions (3.10 or lower) for Adafruit packages

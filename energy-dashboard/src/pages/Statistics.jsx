@@ -12,37 +12,20 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { driftValue, genBarData, genSeries, randomInRange, timeLabel } from '../data/mockData';
 
 const axisStyle = { stroke: '#94a3b8', fontSize: 12 };
 const gridColor = '#1f2937';
 
 export default function Statistics() {
-  const [daily, setDaily] = useState(() => genBarData(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], 'value', { min: 14, max: 32, decimals: 1 }));
-  const [weekly, setWeekly] = useState(() => genBarData(['Week 1', 'Week 2', 'Week 3', 'Week 4'], 'value', { min: 140, max: 220, decimals: 1 }));
-  const [vcData, setVcData] = useState(() =>
-    genSeries(16, 'voltage', { min: 224, max: 238, decimals: 2 }).map((p) => ({ ...p, current: randomInRange(1.4, 4.6, 2) }))
-  );
-  const [peak, setPeak] = useState(() =>
-    genSeries(12, 'load', { min: 480, max: 1080, decimals: 0 }).map((p, idx) => ({ ...p, label: `${idx + 6}:00` }))
-  );
+  const [daily, setDaily] = useState([]);
+  const [weekly, setWeekly] = useState([]);
+  const [vcData, setVcData] = useState([]);
+  const [peak, setPeak] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDaily((prev) => prev.map((d) => ({ ...d, value: driftValue(d.value, 14, 34, 0.4, 1) })));
-      setWeekly((prev) => prev.map((d) => ({ ...d, value: driftValue(d.value, 140, 230, 1.2, 1) })));
-      setVcData((prev) => {
-        const last = prev[prev.length - 1] ?? { voltage: 230, current: 2.4 };
-        const next = {
-          time: timeLabel(),
-          voltage: driftValue(last.voltage, 224, 238, 0.9, 2),
-          current: driftValue(last.current, 1.4, 4.6, 0.16, 2),
-        };
-        return [...prev.slice(-15), next];
-      });
-      setPeak((prev) => prev.map((p) => ({ ...p, load: driftValue(p.load, 480, 1100, 18, 0) })));
-    }, 2500);
-    return () => clearInterval(interval);
+    // TODO: Fetch statistics data from API endpoint
+    setLoading(false);
   }, []);
 
   return (

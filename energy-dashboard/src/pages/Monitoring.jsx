@@ -2,47 +2,43 @@ import { useEffect, useState } from 'react';
 import { FiActivity, FiCpu, FiPower, FiZap } from 'react-icons/fi';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 import DataCard from '../components/DataCard';
-import { driftValue, genSeries, randomInRange, timeLabel } from '../data/mockData';
+import { fetchMetrics } from '../services/api';
 
 const axisStyle = { stroke: '#94a3b8', fontSize: 12 };
 const gridColor = '#1f2937';
 
 export default function Monitoring() {
   const [metrics, setMetrics] = useState({
-    voltage: 230,
-    current: 4.2,
-    power: 900,
-    energy: 12,
-    status: 'Online',
+    voltage: 0,
+    current: 0,
+    power: 0,
+    energy: 0,
+    status: 'Loading',
   });
 
-  const [waveData, setWaveData] = useState(() =>
-    genSeries(20, 'voltage', { min: 220, max: 240, decimals: 2 }).map((p) => ({
-      ...p,
-      current: randomInRange(1.4, 4.5, 2),
-    }))
-  );
+  const [waveData, setWaveData] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setMetrics((prev) => ({
-        voltage: driftValue(prev.voltage ?? 230, 224, 236, 1.1, 2),
-        current: driftValue(prev.current ?? 2.4, 1.4, 4.6, 0.18, 2),
-        power: driftValue(prev.power ?? 720, 520, 980, 35, 0),
-        energy: driftValue(prev.energy ?? 14, 10, 24, 0.18, 2),
-        status: Math.random() > 0.93 ? 'Offline' : 'Online',
-      }));
+    const fetchData = async () => {
+      try {
+        const data = await fetchMetrics();
+        setMetrics({
+          voltage: data.voltage || 0,
+          current: data.current || 0,
+          power: data.power || 0,
+          energy: data.energy || 0,
+          status: 'Online',
+        });
+      } catch (error) {
+        setMetrics((prev) => ({ ...prev, status: 'Offline' }));
+      } finally {
+        setLoading(false);
+      }
+    };
 
-      setWaveData((prev) => {
-        const last = prev[prev.length - 1] ?? { voltage: 230, current: 2.5 };
-        const next = {
-          time: timeLabel(),
-          voltage: driftValue(last.voltage, 224, 238, 0.9, 2),
-          current: driftValue(last.current, 1.4, 4.6, 0.16, 2),
-        };
-        return [...prev.slice(-19), next];
-      });
-    }, 2500);
+    fetchData();
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
 

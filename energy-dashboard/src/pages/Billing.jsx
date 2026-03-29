@@ -3,27 +3,18 @@ import { jsPDF } from 'jspdf';
 import { FiCalendar, FiDownloadCloud, FiDollarSign } from 'react-icons/fi';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DataCard from '../components/DataCard';
-import { driftValue, genBarData, randomInRange } from '../data/mockData';
 
 const axisStyle = { stroke: '#94a3b8', fontSize: 12 };
 const gridColor = '#1f2937';
 
 export default function Billing() {
-  const [bill, setBill] = useState({ units: 42.6, rate: 8.5, total: 362, cycle: 'Jan 01 - Jan 31', status: 'Paid' });
-  const [chartData, setChartData] = useState(() => genBarData(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'], 'value', { min: 1200, max: 2200, decimals: 0 }));
+  const [bill, setBill] = useState({ units: 0, rate: 0, total: 0, cycle: '', status: 'Pending' });
+  const [chartData, setChartData] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setBill((prev) => {
-        const units = driftValue(prev.units ?? 42.6, 36, 54, 0.6, 1);
-        const rate = driftValue(prev.rate ?? 8.5, 7.5, 9.4, 0.05, 2);
-        const total = Number((units * rate).toFixed(2));
-        const status = Math.random() > 0.92 ? (prev.status === 'Paid' ? 'Pending' : 'Paid') : prev.status;
-        return { ...prev, units, rate, total, status };
-      });
-      setChartData((prev) => prev.map((bar) => ({ ...bar, value: driftValue(bar.value, 1400, 2100, 45, 0) })));
-    }, 3000);
-    return () => clearInterval(interval);
+    // TODO: Fetch billing data from API endpoint
+    setLoading(false);
   }, []);
 
   const downloadBillPdf = () => {

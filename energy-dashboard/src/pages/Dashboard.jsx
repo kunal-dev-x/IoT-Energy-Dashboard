@@ -3,6 +3,7 @@ import { FiActivity, FiBarChart2, FiDollarSign, FiPower, FiTrendingUp, FiZap } f
 import DataCard from '../components/DataCard';
 import Charts from '../components/Charts';
 import Controls from '../components/Controls';
+import { fetchMetrics } from '../services/api';
 
 const cardConfig = [
   { key: 'voltage', label: 'Voltage', unit: 'V', range: [223, 238], icon: FiZap, accent: 'linear-gradient(120deg, rgba(34,211,238,0.4), rgba(99,102,241,0.35))' },
@@ -22,94 +23,48 @@ const switchesDefault = {
   charging: false,
 };
 
-const randomInRange = (min, max, decimals = 2) => Number((Math.random() * (max - min) + min).toFixed(decimals));
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
-const drift = (prev, min, max, step, decimals = 2) => {
-  const next = prev + randomInRange(-step, step, decimals);
-  return Number(clamp(next, min, max).toFixed(decimals));
-};
-
-const timeLabel = () =>
-  new Date().toLocaleTimeString([], {
-    hour12: false,
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-const initialSeries = (length, min, max, key) =>
-  Array.from({ length }).map(() => ({
-    time: timeLabel(),
-    [key]: randomInRange(min, max, key === 'power' ? 0 : 2),
-  }));
-
-const initialEnergy = () => {
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  return days.map((day) => ({ day, energy: randomInRange(16, 28, 2) }));
-};
-
 export default function Dashboard() {
-  const [metrics, setMetrics] = useState(() => {
-    const values = {};
-    cardConfig.forEach((c) => {
-      values[c.key] = randomInRange(c.range[0], c.range[1], c.key === 'power' ? 0 : 2);
-    });
-    return values;
+  const [metrics, setMetrics] = useState({
+    voltage: 0,
+    current: 0,
+    power: 0,
+    energy: 0,
+    frequency: 0,
+    pf: 0,
+    cost: 0,
   });
 
-  const [powerData, setPowerData] = useState(() => initialSeries(18, 520, 880, 'power'));
-  const [vcData, setVcData] = useState(() =>
-    initialSeries(18, 223, 238, 'voltage').map((p) => ({ ...p, current: randomInRange(1.6, 3.8, 2) }))
-  );
-  const [energyData, setEnergyData] = useState(initialEnergy);
+  const [powerData, setPowerData] = useState([]);
+  const [vcData, setVcData] = useState([]);
+  const [energyData, setEnergyData] = useState([]);
   const [switchStates, setSwitchStates] = useState(switchesDefault);
 
+  // Fetch real-time metrics from API
   useEffect(() => {
-    const interval = setInterval(() => {
-      setMetrics((prevMetrics) =>
-        cardConfig.reduce((acc, c) => {
-          const decimals = c.key === 'power' ? 0 : 2;
-          const stepMap = {
-            voltage: 1.5,
-            current: 0.3,
-            power: 70,
-            energy: 0.12,
-            frequency: 0.05,
-            pf: 0.01,
-            cost: 1.2,
-          };
-          const step = stepMap[c.key] ?? 0.2;
-          const prev = prevMetrics[c.key] ?? randomInRange(c.range[0], c.range[1], decimals);
-          acc[c.key] = drift(prev, c.range[0], c.range[1], step, decimals);
-          return acc;
-        }, {})
-      );
+    const fetchAndUpdate = async () => {
+      try {
+        const data = await fetchMetrics();
+        
+        // Update with real API data
+        setMetrics({
+          voltage: data.voltage || 0,
+          current: data.current || 0,
+          power: data.power || 0,
+          energy: data.energy || 0,
+          frequency: data.frequency || 50,
+          pf: data.pf || 0.95,
+          cost: data.cost || 0,
+        });
+      } catch (error) {
+        console.error('Failed to fetch metrics:', error);
+      }
+    };
 
-      setPowerData((prev) => {
-        const lastPower = prev[prev.length - 1]?.power ?? 700;
-        const nextPoint = { time: timeLabel(), power: drift(lastPower, 520, 960, 60, 0) };
-        return [...prev.slice(-17), nextPoint];
-      });
+    // Fetch immediately on mount
+    fetchAndUpdate();
 
-      setVcData((prev) => {
-        const last = prev[prev.length - 1] ?? { voltage: 230, current: 2.4 };
-        const nextPoint = {
-          time: timeLabel(),
-          voltage: drift(last.voltage, 223, 238, 1.2, 2),
-          current: drift(last.current, 1.4, 4.6, 0.25, 2),
-        };
-        return [...prev.slice(-17), nextPoint];
-      });
-
-      setEnergyData((prev) =>
-        prev.map((item) => {
-          const delta = randomInRange(-0.05, 0.35, 2);
-          const energy = clamp(item.energy + delta, 12, 44);
-          return { ...item, energy: Number(energy.toFixed(2)) };
-        })
-      );
-    }, 2500);
+    // Fetch at intervals (2.5 second update)
+    const interval = setInterval(fetchAndUpdate, 2500);
 
     return () => clearInterval(interval);
   }, []);
