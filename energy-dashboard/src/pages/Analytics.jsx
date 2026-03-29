@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BarChart,
   Bar,
@@ -108,7 +108,7 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function Statistics() {
+export default function Analytics() {
   const [activeTab, setActiveTab] = useState('monthly');
 
   const totalEnergy = monthlyDataSample.reduce((sum, m) => sum + m.energy_kwh, 0);
@@ -252,7 +252,7 @@ export default function Statistics() {
             <div className="h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={deviceDataSample} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name} ${value}%`} outerRadius={80} fill="#8884d8" dataKey="value">
+                  <Pie data={deviceDataSample} cx="50%" cy="50%" labelLine={false} label label={({ name, value }) => `${name} ${value}%`} outerRadius={80} fill="#8884d8" dataKey="value">
                     {deviceDataSample.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
