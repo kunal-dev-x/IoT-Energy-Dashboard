@@ -5,6 +5,55 @@ import random
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'energy_data.db')
 
+def init_database():
+    """Initialize database tables"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    # Table for daily summaries
+    c.execute('''CREATE TABLE IF NOT EXISTS daily_summary (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT UNIQUE NOT NULL,
+        energy_kwh REAL,
+        cost REAL,
+        avg_voltage REAL,
+        avg_current REAL,
+        avg_power REAL,
+        max_power REAL,
+        min_power REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Table for monthly summaries
+    c.execute('''CREATE TABLE IF NOT EXISTS monthly_summary (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        month TEXT UNIQUE NOT NULL,
+        energy_kwh REAL,
+        cost REAL,
+        avg_voltage REAL,
+        avg_current REAL,
+        avg_power REAL,
+        max_power REAL,
+        days_count INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Table for hourly data points
+    c.execute('''CREATE TABLE IF NOT EXISTS hourly_data (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT NOT NULL,
+        voltage REAL,
+        current REAL,
+        power REAL,
+        energy_consumed REAL,
+        cost REAL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    conn.commit()
+    conn.close()
+    print("✓ Database initialized")
+
 def populate_3_months_data():
     """Populate database with realistic sample data for Jan, Feb, March"""
     
@@ -151,4 +200,5 @@ def populate_3_months_data():
     print("="*50)
 
 if __name__ == "__main__":
+    init_database()  # Initialize tables first
     populate_3_months_data()

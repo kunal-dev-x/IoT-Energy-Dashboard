@@ -326,7 +326,7 @@ def sensor_loop():
             # Auto-control is active (lock expired)
             if power > 500:
                 relay_off()
-             else:
+            else:
                 relay_on()
         # Otherwise, keep manual user control
 
