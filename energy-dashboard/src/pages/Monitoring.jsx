@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FiActivity, FiCpu, FiPower, FiZap } from 'react-icons/fi';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts';
 import DataCard from '../components/DataCard';
-import { fetchMetrics } from '../services/api';
+import { fetchMetrics, fetchWaveform } from '../services/api';
 
 const axisStyle = { stroke: '#94a3b8', fontSize: 12 };
 const gridColor = '#1f2937';
@@ -32,14 +32,29 @@ export default function Monitoring() {
         });
       } catch (error) {
         setMetrics((prev) => ({ ...prev, status: 'Offline' }));
-      } finally {
-        setLoading(false);
+      }
+    };
+
+    const fetchWaveformData = async () => {
+      try {
+        const data = await fetchWaveform(60);
+        setWaveData(data);
+      } catch (error) {
+        console.warn('Failed to fetch waveform:', error);
       }
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
+    fetchWaveformData();
+    const metricsInterval = setInterval(fetchData, 5000);
+    const waveformInterval = setInterval(fetchWaveformData, 10000);
+    
+    setLoading(false);
+    
+    return () => {
+      clearInterval(metricsInterval);
+      clearInterval(waveformInterval);
+    };
   }, []);
 
   const cards = [

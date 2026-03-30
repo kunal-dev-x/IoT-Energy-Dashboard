@@ -1,0 +1,23 @@
+[Unit]
+Description=IoT Energy Dashboard Backend API
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/Documents/IoT-Energy-Dashboard/energy-dashboard
+Environment="PATH=/home/pi/Documents/IoT-Energy-Dashboard/energy-dashboard/server/venv/bin"
+ExecStart=/home/pi/Documents/IoT-Energy-Dashboard/energy-dashboard/server/venv/bin/python server/backend.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=energy-dashboard
+
+[Install]
+WantedBy=multi-user.target
+
+pi@raspberrypi:~/Documents/IoT-Energy-Dashboard/energy-dashboard $ source server/venv/bin/activate
+(venv) pi@raspberrypi:~/Documents/IoT-Energy-Dashboard/energy-dashboard $ python server/backend.py

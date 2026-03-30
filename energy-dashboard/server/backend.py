@@ -336,6 +336,17 @@ app = Flask(__name__)
 CORS(app)
 
 
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({
+        "status": "healthy",
+        "service": "IoT Energy Dashboard Backend",
+        "timestamp": datetime.now().isoformat(),
+        "database": "connected"
+    }), 200
+
+
 @app.route('/metrics', methods=['GET'])
 def get_metrics():
     return jsonify(latest_data)
@@ -358,6 +369,47 @@ def api_off():
 
 
 # ================= ROUTES: HISTORY & ANALYTICS =================
+
+@app.route('/waveform', methods=['GET'])
+def get_waveform():
+    """Get recent hourly data points for live waveform display (last 60 points)"""
+    limit = request.args.get('limit', 60, type=int)
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''SELECT timestamp, voltage, current, power 
+                    FROM hourly_data 
+                    ORDER BY timestamp DESC 
+                    LIMIT ?''', (limit,))
+        rows = c.fetchall()
+        conn.close()
+        
+        # Reverse to chronological order
+        data = []
+        for row in reversed(rows):
+            timestamp = row[0]
+            # Parse ISO format timestamp and extract time HH:MM:SS
+            try:
+                dt = datetime.fromisoformat(timestamp)
+                time_str = dt.strftime("%H:%M:%S")
+            except:
+                time_str = timestamp[-8:]  # Fallback to last 8 chars if parsing fails
+            
+            data.append({
+                "time": time_str,
+                "timestamp": timestamp,
+                "voltage": row[1],
+                "current": row[2],
+                "power": row[3]
+            })
+        
+        return jsonify({
+            "data": data,
+            "count": len(data)
+        }), 200
+    except Exception as e:
+        print(f"⚠ Error fetching waveform:", e)
+        return jsonify({"error": str(e), "data": []}), 500
 
 @app.route('/history/daily', methods=['GET'])
 def history_daily():

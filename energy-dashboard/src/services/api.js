@@ -66,6 +66,16 @@ export async function fetchHourlyPower(hours = 24) {
   }
 }
 
+export async function fetchWaveform(limit = 60) {
+  try {
+    const res = await apiClient.get(`/waveform?limit=${limit}`);
+    return res.data.data || [];
+  } catch (error) {
+    console.warn('Failed to fetch waveform data:', error);
+    return [];
+  }
+}
+
 // Mock helper (optional): call this instead of fetchMetrics to test without device
 export function mockMetrics() {
   const rand = (min, max) => Number((Math.random() * (max - min) + min).toFixed(2));
