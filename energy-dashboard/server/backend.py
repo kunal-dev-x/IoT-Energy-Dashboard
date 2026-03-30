@@ -108,8 +108,38 @@ latest_data = {
 
 energy_kwh = 0
 
+# Daily energy (static) - loads from database or uses default
+daily_energy = 0
+daily_cost = 0
+
 
 # ================= FUNCTIONS =================
+
+def get_today_energy():
+    """
+    Load today's STATIC energy from database
+    
+    Daily Energy Strategy:
+    - Pulled from daily_summary table (static value)
+    - Loaded at: Application startup & midnight
+    - Updated: Once per day (automatic at 00:00)
+    - Used by: Dashboard Daily Energy display
+    
+    Query: SELECT energy_kwh FROM daily_summary WHERE date = TODAY
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT energy_kwh, cost FROM daily_summary WHERE date = ?', (today,))
+        result = c.fetchone()
+        conn.close()
+        if result:
+            return result[0], result[1]  # Return energy_kwh, cost
+    except Exception as e:
+        print(f"⚠ Error loading today's energy: {e}")
+    return 0, 0
+
 
 def read_current():
     values = []
@@ -259,23 +289,36 @@ def get_yearly_stats(year=None):
         return None
 
 def sensor_loop():
-    global latest_data, energy_kwh
+    """
+    Main sensor reading loop - Updates every 2 seconds
+    
+    Daily Energy: STATIC (from database)
+    ├─ Loaded at startup & midnight
+    ├─ Source: daily_summary table
+    └─ Updated once per day at 00:00
+    
+    Real-time Power: LIVE (from sensors)
+    ├─ Calculation: Power = Voltage × Current
+    ├─ Updated every 2 seconds
+    ├─ Voltage: ADS1115 Channel 1 (gain 260)
+    ├─ Current: ADS1115 Channel 0 (sensitivity 0.185)
+    └─ RMS averaging: 400 samples per reading
+    """
+    global latest_data, daily_energy, daily_cost
 
     prev_time = time.time()
     hourly_samples = []  # For averaging
-    last_save_hour = datetime.now().hour
     last_save_day = datetime.now().day
+    
+    # Load today's STATIC energy from database on startup
+    daily_energy, daily_cost = get_today_energy()
+    print(f"✓ Loaded today's energy: {daily_energy} kWh, ₹{daily_cost}")
 
     while True:
-        voltage = read_voltage()
-        current = read_current()
-        power = voltage * current
-
-        now = time.time()
-        dt = (now - prev_time) / 3600  # Calculate time delta in hours
-        prev_time = now
-        energy_kwh += (power * dt) / 1000
-        cost = energy_kwh * COST_PER_KWH
+        # === REAL-TIME POWER (Live from sensors) ===
+        voltage = read_voltage()      # Live reading
+        current = read_current()      # Live reading
+        power = voltage * current     # Live calculation
 
         # Relay safety: only auto-control if manual lock has expired
         current_time = time.time()
@@ -283,19 +326,19 @@ def sensor_loop():
             # Auto-control is active (lock expired)
             if power > 500:
                 relay_off()
-            else:
+             else:
                 relay_on()
         # Otherwise, keep manual user control
 
         latest_data = {
-            "cost": round(cost, 2),
-            "current": round(current, 2),
-            "energy": round(energy_kwh, 2),
+            "cost": round(daily_cost, 2),           # Static (daily)
+            "current": round(current, 2),           # Live (real-time)
+            "energy": round(daily_energy, 2),       # Static (daily)
             "frequency": 50.0,
             "pf": 0.95,
-            "power": round(power, 2),
+            "power": round(power, 2),               # Live (real-time) - Voltage × Current
             "timestamp": datetime.now().isoformat(),
-            "voltage": round(voltage, 2),
+            "voltage": round(voltage, 2),           # Live (real-time)
             "relay_state": latest_data.get("relay_state", "OFF"),
             "relay_locked_until": latest_data.get("relay_locked_until", 0)
         }
@@ -309,25 +352,18 @@ def sensor_loop():
         })
 
         # Save hourly data point
-        save_hourly_data(voltage, current, power, energy_kwh, cost)
+        save_hourly_data(voltage, current, power, daily_energy, daily_cost)
 
-        # Auto-save daily summary at midnight
+        # Reset at midnight - load next day's STATIC energy
         now_dt = datetime.now()
         if last_save_day != now_dt.day:
-            if len(hourly_samples) > 0:
-                avg_voltage = np.mean([s["voltage"] for s in hourly_samples])
-                avg_current = np.mean([s["current"] for s in hourly_samples])
-                avg_power = np.mean([s["power"] for s in hourly_samples])
-                max_power = np.max([s["power"] for s in hourly_samples])
-                min_power = np.min([s["power"] for s in hourly_samples])
-                
-                yesterday = (now_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-                save_daily_summary(yesterday, energy_kwh, cost, avg_voltage, avg_current, avg_power, max_power, min_power)
-            
+            daily_energy, daily_cost = get_today_energy()
+            print(f"✓ Day changed! Loaded new day's energy: {daily_energy} kWh, ₹{daily_cost}")
             last_save_day = now_dt.day
+            hourly_samples = []  # Reset hourly samples
 
         print(latest_data)
-        time.sleep(2)
+        time.sleep(2)  # Update every 2 seconds
 
 
 # ================= FLASK API =================
@@ -349,6 +385,22 @@ def health():
 
 @app.route('/metrics', methods=['GET'])
 def get_metrics():
+    """
+    Get current metrics
+    
+    STATIC VALUES (Daily):
+    - energy: Daily energy (kWh) from database - same all day
+    - cost: Daily cost (₹) from database - same all day
+    
+    LIVE VALUES (Real-time, updates every 2 seconds):
+    - power: Live power = voltage × current (watts)
+    - voltage: Live voltage reading (volts)
+    - current: Live current reading (amps)
+    - frequency: AC frequency (50 Hz India)
+    - pf: Power factor (0.95)
+    - relay_state: Relay status (ON/OFF)
+    - timestamp: Current timestamp
+    """
     return jsonify(latest_data)
 
 
