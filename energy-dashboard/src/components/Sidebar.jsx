@@ -7,7 +7,6 @@ import {
   FiDollarSign,
   FiGrid,
   FiMonitor,
-  FiSettings,
 } from 'react-icons/fi';
 
 const navItems = [
@@ -17,7 +16,6 @@ const navItems = [
   { label: 'Statistics', path: '/statistics', icon: FiBarChart2 },
   { label: 'Alerts', path: '/alerts', icon: FiAlertTriangle },
   { label: 'Devices', path: '/devices', icon: FiBatteryCharging },
-  { label: 'Settings', path: '/settings', icon: FiSettings },
 ];
 
 export default function Sidebar() {

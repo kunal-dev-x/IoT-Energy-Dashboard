@@ -15,7 +15,6 @@ const routes = [
   { path: '/statistics', label: 'Statistics', element: <Statistics /> },
   { path: '/alerts', label: 'Alerts', element: <Alerts /> },
   { path: '/devices', label: 'Devices', element: <Devices /> },
-  { path: '/settings', label: 'Settings', element: <Dashboard subtitle="Configure devices" /> },
 ];
 
 function Shell() {

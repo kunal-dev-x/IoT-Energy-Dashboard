@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { jsPDF } from 'jspdf';
 import { FiCalendar, FiDownloadCloud, FiDollarSign, FiInfo, FiPlay, FiPause, FiRotateCcw, FiDownload } from 'react-icons/fi';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -52,13 +52,10 @@ export default function Billing() {
     voltage: 0,
     current: 0,
   });
-  const [costPerSecond, setCostPerSecond] = useState(0);    // Cost accumulation per second (UI only)
+  const [incrementalCost, setIncrementalCost] = useState(0); // Incremental cost added in current cycle
+  const [costPerSecond, setCostPerSecond] = useState(0);    // Cost accumulation per second
   const [powerReadings, setPowerReadings] = useState([]);    // History of power readings
-
-  // ===== SESSION TRACKING STATE (FROM BACKEND) =====
-  const [sessionData, setSessionData] = useState(null);      // Current session from backend
-  const [sessionActive, setSessionActive] = useState(false);  // Is there an active session?
-  const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionStartTime, setSessionStartTime] = useState(Date.now());
 
   // ===== DATA TRANSFORMATION =====
   const transformBillingData = (data) => {
@@ -124,25 +121,7 @@ export default function Billing() {
     fetchHistoricalData();
   }, []);
 
-  // ===== CHECK FOR ACTIVE SESSION ON MOUNT =====
-  useEffect(() => {
-    const checkActiveSession = async () => {
-      try {
-        const result = await getCurrentSession();
-        if (result.success && result.data) {
-          setSessionData(result.data);
-          setSessionActive(true);
-          console.log('✓ Active session found:', result.data.session_id);
-        }
-      } catch (error) {
-        console.error('Error checking for active session:', error);
-      }
-    };
-
-    checkActiveSession();
-  }, []);
-
-  // ===== LIVE POLLING FOR CURRENT MONTH & SESSION DATA (every 2 seconds) =====
+  // ===== LIVE POLLING FOR CURRENT MONTH (every 1 second for granular tracking) =====
   useEffect(() => {
     if (!isLiveMode) return;
 
@@ -151,11 +130,12 @@ export default function Billing() {
         const data = await fetchMetrics();
         
         const now = new Date();
+        const currentMonth = now.toISOString().slice(0, 7); // YYYY-MM
         const currentPower = parseFloat(data.power || 0);    // Power in watts
         const currentVoltage = parseFloat(data.voltage || 0);
         const currentCurrent = parseFloat(data.current || 0);
 
-        // Calculate incremental cost per watt per second (UI only, not stored)
+        // Calculate incremental cost per watt per second
         // Formula: (Power in Watts × Rate per kWh) / (1000 watts/kW × 3600 seconds/hour)
         const costPerSecond = (currentPower * COST_PER_UNIT) / (1000 * 3600);
         
@@ -179,11 +159,14 @@ export default function Billing() {
           return newReadings.slice(-60);
         });
 
+        // Calculate incremental cost for this polling cycle
+        setIncrementalCost(prev => prev + costPerSecond);
+
         setCurrentMonthBill({
           energy: parseFloat(data.energy || 0),
           cost: parseFloat(data.cost || 0),
           rate: COST_PER_UNIT,
-          status: 'Online',
+          status: 'Pending',
           lastUpdate: now.toLocaleTimeString(),
         });
 
@@ -195,18 +178,21 @@ export default function Billing() {
           power: currentPower,
           energy: parseFloat(data.energy || 0),
           cost: parseFloat(data.cost || 0),
+        }).then(result => {
+          if (result.success) {
+            console.log('💾 Billing data saved to DB:', {
+              power: currentPower + ' W',
+              energy: data.energy + ' kWh',
+              cost: data.cost + ' ₹',
+            });
+          }
         });
 
-        // ===== FETCH CURRENT SESSION DATA FROM BACKEND =====
-        const sessionResult = await getCurrentSession();
-        if (sessionResult.success && sessionResult.data) {
-          setSessionData(sessionResult.data);
-          setSessionActive(true);
-        } else {
-          setSessionActive(false);
-        }
-
-        console.log('✓ Live metrics & session updated');
+        console.log('✓ Live metrics:', {
+          power: currentPower + ' W',
+          costPerSecond: costPerSecond.toFixed(8) + ' ₹',
+          cumulativeCost: parseFloat(data.cost || 0) + ' ₹',
+        });
       } catch (error) {
         console.error('⚠️ Error fetching live metrics:', error.message);
         setCurrentMonthBill(prev => ({
@@ -219,8 +205,8 @@ export default function Billing() {
     // Fetch immediately
     pollLiveMetrics();
 
-    // Poll every 2 seconds for billing updates
-    const interval = setInterval(pollLiveMetrics, 2000);
+    // Poll every 1 second for granular billing updates
+    const interval = setInterval(pollLiveMetrics, 1000);
 
     return () => clearInterval(interval);
   }, [isLiveMode]);
@@ -296,95 +282,6 @@ export default function Billing() {
     
     doc.save(fileName);
     console.log('✓ PDF downloaded:', fileName);
-  };
-
-  // ===== SESSION MANAGEMENT FUNCTIONS (USING BACKEND) =====
-  const handleStartSession = async () => {
-    setSessionLoading(true);
-    try {
-      const result = await startSession();
-      if (result.success) {
-        console.log('✓ Session started:', result.session_id);
-        setSessionData({
-          session_id: result.session_id,
-          session_start: result.started_at,
-          session_duration_seconds: 0,
-          energy_consumed: 0,
-          cost: 0,
-          status: 'active'
-        });
-        setSessionActive(true);
-      } else {
-        console.error('Failed to start session:', result.error);
-      }
-    } catch (error) {
-      console.error('Error starting session:', error);
-    } finally {
-      setSessionLoading(false);
-    }
-  };
-
-  const handleEndSession = async () => {
-    setSessionLoading(true);
-    try {
-      const result = await endSession(sessionData?.session_id);
-      if (result.success) {
-        console.log('✓ Session ended');
-        setSessionActive(false);
-        // Keep showing session data for display
-      } else {
-        console.error('Failed to end session:', result.error);
-      }
-    } catch (error) {
-      console.error('Error ending session:', error);
-    } finally {
-      setSessionLoading(false);
-    }
-  };
-
-  const handleResetSession = async () => {
-    setSessionLoading(true);
-    try {
-      const result = await resetSession();
-      if (result.success) {
-        console.log('✓ Session reset');
-        setSessionData(null);
-        setSessionActive(false);
-      } else {
-        console.error('Failed to reset session:', result.error);
-      }
-    } catch (error) {
-      console.error('Error resetting session:', error);
-    } finally {
-      setSessionLoading(false);
-    }
-  };
-
-  const exportSessionData = () => {
-    if (!sessionData) return;
-    
-    const csvData = {
-      session_id: sessionData.session_id,
-      started_at: sessionData.session_start,
-      duration_seconds: sessionData.session_duration_seconds,
-      energy_consumed_kwh: sessionData.energy_consumed,
-      cost_inr: sessionData.cost,
-      status: sessionData.status
-    };
-
-    const csvString = Object.entries(csvData)
-      .map(([key, value]) => `${key},${value}`)
-      .join('\n');
-
-    const blob = new Blob([csvString], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `session-${sessionData.session_id}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    
-    console.log('✓ Session data exported');
   };
 
   // ===== UI CARDS =====
@@ -474,16 +371,16 @@ export default function Billing() {
               </p>
             </div>
 
-            {/* Session Cost (FROM BACKEND) */}
+            {/* Incremental Cost Accumulation */}
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Session Cost</p>
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold text-orange-400 tabular-nums">
-                  ₹ {sessionActive && sessionData ? sessionData.cost.toFixed(2) : '0.00'}
+                <span className="text-3xl font-bold text-orange-400 tabular-nums animate-pulse">
+                  ₹ {incrementalCost.toFixed(6)}
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                {sessionActive ? `Session ID: ${sessionData.session_id.slice(0, 8)}...` : 'No active session'}
+                Since page load
               </p>
             </div>
           </div>
@@ -510,57 +407,21 @@ export default function Billing() {
                 <span className="text-right text-amber-300">₹ {costPerSecond.toFixed(8)}</span>
               </div>
               <div className="flex justify-between text-slate-200 font-semibold">
-                <span>Session Total (Backend):</span>
-                <span className="text-right text-orange-300">₹ {sessionActive && sessionData ? sessionData.cost.toFixed(2) : '0.00'}</span>
+                <span>Session Total:</span>
+                <span className="text-right text-orange-300">₹ {incrementalCost.toFixed(6)}</span>
               </div>
             </div>
-          </div>
-
-          {/* Session Control Buttons */}
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              onClick={handleStartSession}
-              disabled={sessionActive || sessionLoading}
-              className="flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-300 hover:border-green-500/50 hover:bg-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              <FiPlay size={16} /> Start Session
-            </button>
-
-            <button
-              onClick={handleEndSession}
-              disabled={!sessionActive || sessionLoading}
-              className="flex items-center gap-2 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-300 hover:border-yellow-500/50 hover:bg-yellow-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              <FiPause size={16} /> End Session
-            </button>
-
-            <button
-              onClick={handleResetSession}
-              disabled={!sessionData || sessionLoading}
-              className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300 hover:border-red-500/50 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              <FiRotateCcw size={16} /> Reset Session
-            </button>
-
-            <button
-              onClick={exportSessionData}
-              disabled={!sessionData || sessionLoading}
-              className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2 text-sm text-cyan-300 hover:border-cyan-500/50 hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
-            >
-              <FiDownload size={16} /> Export
-            </button>
           </div>
 
           {/* Info Message */}
           <div className="mt-4 flex gap-2 items-start text-xs text-slate-300 bg-blue-500/10 p-3 rounded border border-blue-500/20">
             <FiInfo size={16} className="flex-shrink-0 mt-0.5 text-blue-400" />
             <span>
-              Session tracking is now powered by backend storage. All session data is persisted in the database. Start a session to track energy and cost measurements for a specific period.
+              The bill increases in real-time based on your current power consumption. Every watt consumed adds to your bill. Even decimal point changes are tracked precisely for accurate billing.
             </span>
           </div>
         </section>
       )}
-
 
       {/* ===== MONTH SELECTOR & CONTROLS ===== */}
       <section className="glass rounded-2xl p-5 shadow-glow">
@@ -571,7 +432,7 @@ export default function Billing() {
               {selectedMonth === null ? 'Current Month (Today)' : selectedMonthData?.month}
             </h3>
             <p className="text-xs text-slate-400 mt-1">
-              {selectedMonthData?.isLive ? '🔴 LIVE - Updates every 2 seconds' : '📊 Historical data'}
+              {selectedMonthData?.isLive ? '🔴 LIVE - Updates every 1 second' : '📊 Historical data'}
             </p>
           </div>
 

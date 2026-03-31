@@ -12,9 +12,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from 'recharts';
 import { FiTrendingUp, FiCalendar, FiBarChart2 } from 'react-icons/fi';
 
@@ -66,15 +63,12 @@ export default function Statistics() {
   const [hourlyData, setHourlyData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dataSource, setDataSource] = useState('api');
+  const [selectedMonth, setSelectedMonth] = useState(null); // null = all 30 days, or specific month
+  const [selectedMonthData, setSelectedMonthData] = useState(null);
+  const [availableMonths, setAvailableMonths] = useState([]);
   const hourlyBufferRef = useRef([]);
 
-  // Device consumption breakdown (static)
-  const deviceDataSample = [
-    { name: 'AC', value: 35, color: '#22d3ee' },
-    { name: 'Lights', value: 15, color: '#a855f7' },
-    { name: 'Appliances', value: 30, color: '#ec4899' },
-    { name: 'Electronics', value: 20, color: '#fbbf24' },
-  ];
+
 
   // ===== FETCH HISTORICAL DATA (ONCE ON MOUNT) =====
   useEffect(() => {
@@ -126,8 +120,16 @@ export default function Statistics() {
           cost: parseFloat(item.cost) || 0,
           avg_power: parseFloat(item.avg_power) || 0,
           max_power: parseFloat(item.max_power) || 0,
+          rawMonth: item.month, // Keep original format for API calls
         }));
         setMonthlyData(formattedMonthly);
+
+        // Build available months list
+        const months = finalMonthly.map(m => ({
+          value: m.month,
+          label: new Date(m.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        }));
+        setAvailableMonths(months);
 
         // Format daily data
         const formattedDaily = finalDaily.map(item => ({
@@ -187,25 +189,93 @@ export default function Statistics() {
     return () => clearInterval(interval);
   }, []);
 
-  // ===== CALCULATE STATISTICS FROM DAILY DATA =====
-  const totalEnergy = dailyData.reduce((sum, day) => sum + (day.energy_kwh || 0), 0);
-  const totalCost = dailyData.reduce((sum, day) => sum + (day.cost || 0), 0);
-  const avgDailyPower = dailyData.length > 0 
-    ? Math.round(dailyData.reduce((sum, day) => sum + (day.avg_power || 0), 0) / dailyData.length)
-    : 0;
+  // ===== HANDLE MONTH SELECTION =====
+  useEffect(() => {
+    if (selectedMonth === null) {
+      // Show all 30 days
+      setSelectedMonthData(null);
+    } else {
+      // Find selected month data from monthlyData
+      const monthData = monthlyData.find(m => m.rawMonth === selectedMonth);
+      if (monthData) {
+        setSelectedMonthData(monthData);
+      }
+    }
+  }, [selectedMonth, monthlyData]);
+
+  // ===== CALCULATE STATISTICS FROM DAILY DATA OR SELECTED MONTH =====
+  const displayData = selectedMonthData || {
+    energy_kwh: dailyData.reduce((sum, day) => sum + (day.energy_kwh || 0), 0),
+    cost: dailyData.reduce((sum, day) => sum + (day.cost || 0), 0),
+    avg_power: dailyData.length > 0 
+      ? Math.round(dailyData.reduce((sum, day) => sum + (day.avg_power || 0), 0) / dailyData.length)
+      : 0,
+  };
+
+  const totalEnergy = displayData.energy_kwh;
+  const totalCost = displayData.cost;
+  const avgDailyPower = displayData.avg_power;
 
   return (
     <div className="space-y-6 pb-10">
+      {/* ===== MONTH SELECTOR ===== */}
+      <div className="glass rounded-2xl p-5 shadow-glow">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Month Selection</p>
+            <h3 className="text-lg font-semibold text-white mt-1">
+              {selectedMonth ? selectedMonthData?.month : 'All Months (Last 30 Days)'}
+            </h3>
+          </div>
+          
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <select
+              value={selectedMonth || 'all'}
+              onChange={(e) => setSelectedMonth(e.target.value === 'all' ? null : e.target.value)}
+              className="flex-1 sm:flex-none rounded-lg bg-white/10 border border-white/20 text-white px-4 py-2 text-sm focus:outline-none focus:border-emerald-400/50 transition"
+            >
+              <option value="all">📅 All Months (Last 30 Days)</option>
+              {availableMonths.map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {selectedMonth && (
+          <div className="mt-4 pt-4 border-t border-white/10 flex flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Energy:</span>
+              <span className="font-semibold text-emerald-300">{selectedMonthData?.energy_kwh.toFixed(2)} kWh</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Cost:</span>
+              <span className="font-semibold text-pink-300">₹{selectedMonthData?.cost.toFixed(0)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Avg Power:</span>
+              <span className="font-semibold text-cyan-300">{selectedMonthData?.avg_power} W</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Max Power:</span>
+              <span className="font-semibold text-amber-300">{selectedMonthData?.max_power} W</span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ===== SUMMARY CARDS ===== */}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="glass rounded-2xl p-6 shadow-glow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Total Energy (30d)</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Total Energy {selectedMonth ? '(Month)' : '(30d)'}</p>
               <p className="text-3xl font-bold text-white mt-2">
                 {totalEnergy.toFixed(1)} <span className="text-lg text-slate-400">kWh</span>
               </p>
-              <p className="text-xs text-slate-500 mt-2">Last 30 days</p>
+              <p className="text-xs text-slate-500 mt-2">{selectedMonth ? selectedMonthData?.month : 'Last 30 days'}</p>
             </div>
             <FiTrendingUp className="w-8 h-8 text-emerald-400" />
           </div>
@@ -214,9 +284,9 @@ export default function Statistics() {
         <div className="glass rounded-2xl p-6 shadow-glow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Total Cost (30d)</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Total Cost {selectedMonth ? '(Month)' : '(30d)'}</p>
               <p className="text-3xl font-bold text-white mt-2">₹{totalCost.toFixed(0)}</p>
-              <p className="text-xs text-slate-500 mt-2">₹{(totalCost / 30).toFixed(0)}/day avg</p>
+              <p className="text-xs text-slate-500 mt-2">₹{(totalCost / (selectedMonth ? 30 : 30)).toFixed(0)}/day avg</p>
             </div>
             <FiBarChart2 className="w-8 h-8 text-pink-400" />
           </div>
@@ -225,7 +295,7 @@ export default function Statistics() {
         <div className="glass rounded-2xl p-6 shadow-glow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Avg Power (30d)</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Avg Power {selectedMonth ? '(Month)' : '(30d)'}</p>
               <p className="text-3xl font-bold text-white mt-2">
                 {avgDailyPower} <span className="text-lg text-slate-400">W</span>
               </p>
@@ -314,83 +384,6 @@ export default function Statistics() {
         </div>
       </div>
 
-      {/* ===== HOURLY POWER DISTRIBUTION (LIVE) ===== */}
-      <div className="glass rounded-2xl p-5 shadow-glow">
-        <div className="mb-4">
-          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Real-time</p>
-          <h3 className="text-lg font-semibold text-white">Hourly Power Distribution (Live - Last 50 Points)</h3>
-          <p className="text-xs text-slate-400 mt-1">🔴 Updates every 2 seconds</p>
-        </div>
-
-        <div className="h-80">
-          {hourlyData.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={hourlyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-                <XAxis dataKey="time" tick={axisStyle} />
-                <YAxis tick={axisStyle} label={{ value: 'Power (W)', angle: -90, position: 'insideLeft' }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="power" stroke="#fbbf24" strokeWidth={3} dot={false} name="Power (W)" isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-full text-slate-400">
-              ⏳ Waiting for live data...
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ===== DEVICE BREAKDOWN ===== */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="glass rounded-2xl p-5 shadow-glow">
-          <h3 className="text-lg font-semibold text-white mb-4">Device Consumption %</h3>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie 
-                  data={deviceDataSample} 
-                  cx="50%" 
-                  cy="50%" 
-                  labelLine={false} 
-                  label={({ name, value }) => `${name} ${value}%`} 
-                  outerRadius={80} 
-                  dataKey="value"
-                  startAngle={90}
-                  endAngle={-270}
-                >
-                  {deviceDataSample.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Device Details Panel */}
-        <div className="glass rounded-2xl p-5 shadow-glow flex flex-col justify-center">
-          <h3 className="text-lg font-semibold text-white mb-6">Device Details</h3>
-          <div className="space-y-4">
-            {deviceDataSample.map(device => (
-              <div key={device.name} className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition">
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: device.color }} />
-                  <p className="text-slate-300 font-medium">{device.name}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-white text-lg">{device.value}%</p>
-                  <p className="text-slate-400 text-sm">({Math.round(device.value / 100 * (totalEnergy * 1000))} Wh)</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-6 pt-6 border-t border-white/10">
-            <p className="text-xs text-slate-400">Total: {deviceDataSample.reduce((sum, d) => sum + d.value, 0)}% assigned load</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

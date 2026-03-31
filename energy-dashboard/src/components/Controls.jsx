@@ -1,9 +1,5 @@
 const switches = [
   { key: 'main', label: 'Main Power' },
-  { key: 'light', label: 'Light' },
-  { key: 'fan', label: 'Fan' },
-  { key: 'ac', label: 'AC' },
-  { key: 'charging', label: 'Charging Socket' },
 ];
 
 export default function Controls({ states, onToggle }) {
