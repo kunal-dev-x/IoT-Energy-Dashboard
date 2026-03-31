@@ -66,6 +66,19 @@ def init_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
     
+    # Table for session tracking
+    c.execute('''CREATE TABLE IF NOT EXISTS session_tracking (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT UNIQUE NOT NULL,
+        session_start TIMESTAMP NOT NULL,
+        session_end TIMESTAMP,
+        energy_consumed REAL DEFAULT 0,
+        cost REAL DEFAULT 0,
+        duration_seconds INTEGER,
+        status TEXT DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
     conn.commit()
     conn.close()
     print("✓ Database initialized:", DB_PATH)
@@ -111,6 +124,13 @@ energy_kwh = 0
 # Daily energy (static) - loads from database or uses default
 daily_energy = 0
 daily_cost = 0
+
+# ===== SESSION TRACKING =====
+import uuid
+active_session = None  # Global session ID
+session_start_time = None
+session_initial_energy = 0
+session_initial_cost = 0
 
 
 # ================= FUNCTIONS =================
@@ -287,6 +307,107 @@ def get_yearly_stats(year=None):
     except Exception as e:
         print(f"⚠ Database error (yearly):", e)
         return None
+
+
+# ================= SESSION TRACKING FUNCTIONS =================
+
+def start_session():
+    """Start a new billing session"""
+    global active_session, session_start_time, session_initial_energy, session_initial_cost
+    try:
+        session_id = str(uuid.uuid4())
+        active_session = session_id
+        session_start_time = datetime.now()
+        session_initial_energy = daily_energy
+        session_initial_cost = daily_cost
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''INSERT INTO session_tracking 
+                    (session_id, session_start, status, energy_consumed, cost)
+                    VALUES (?, ?, 'active', ?, ?)''',
+                 (session_id, session_start_time.isoformat(), 0, 0))
+        conn.commit()
+        conn.close()
+        
+        print(f"✓ Session started: {session_id}")
+        return session_id
+    except Exception as e:
+        print(f"⚠ Error starting session:", e)
+        return None
+
+
+def end_session(session_id=None):
+    """End the current billing session"""
+    global active_session, session_start_time
+    try:
+        sid = session_id or active_session
+        if not sid:
+            return False
+            
+        session_end_time = datetime.now()
+        session_energy = abs(daily_energy - session_initial_energy) if session_initial_energy else daily_energy
+        session_cost = abs(daily_cost - session_initial_cost) if session_initial_cost else daily_cost
+        duration = (session_end_time - session_start_time).total_seconds() if session_start_time else 0
+        
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''UPDATE session_tracking 
+                    SET session_end = ?, status = 'closed', 
+                        energy_consumed = ?, cost = ?, duration_seconds = ?
+                    WHERE session_id = ?''',
+                 (session_end_time.isoformat(), session_energy, session_cost, int(duration), sid))
+        conn.commit()
+        conn.close()
+        
+        if sid == active_session:
+            active_session = None
+            session_start_time = None
+        
+        print(f"✓ Session ended: {sid} | Energy: {session_energy} kWh | Cost: ₹{session_cost}")
+        return True
+    except Exception as e:
+        print(f"⚠ Error ending session:", e)
+        return False
+
+
+def get_current_session():
+    """Get current active session data"""
+    try:
+        if not active_session:
+            return None
+            
+        # Calculate live session metrics
+        session_energy = abs(daily_energy - session_initial_energy) if session_initial_energy else daily_energy
+        session_cost = abs(daily_cost - session_initial_cost) if session_initial_cost else daily_cost
+        duration = (datetime.now() - session_start_time).total_seconds() if session_start_time else 0
+        
+        return {
+            "session_id": active_session,
+            "session_start": session_start_time.isoformat() if session_start_time else None,
+            "session_duration_seconds": int(duration),
+            "energy_consumed": round(session_energy, 4),
+            "cost": round(session_cost, 2),
+            "status": "active"
+        }
+    except Exception as e:
+        print(f"⚠ Error getting current session:", e)
+        return None
+
+
+def reset_session():
+    """Reset current session data"""
+    global active_session, session_start_time, session_initial_energy, session_initial_cost
+    try:
+        active_session = None
+        session_start_time = None
+        session_initial_energy = 0
+        session_initial_cost = 0
+        print("✓ Session reset")
+        return True
+    except Exception as e:
+        print(f"⚠ Error resetting session:", e)
+        return False
 
 def sensor_loop():
     """
@@ -556,6 +677,134 @@ def get_current_billing():
         "data": latest_data,
         "timestamp": datetime.now().isoformat()
     }), 200
+
+# ================= SESSION MANAGEMENT ENDPOINTS =================
+
+@app.route('/session/start', methods=['POST'])
+def session_start():
+    """Start a new billing session"""
+    try:
+        session_id = start_session()
+        if session_id:
+            return jsonify({
+                "success": True,
+                "session_id": session_id,
+                "started_at": datetime.now().isoformat()
+            }), 201
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to start session"
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/session/current', methods=['GET'])
+def session_current():
+    """Get current active session data"""
+    try:
+        session = get_current_session()
+        if session:
+            return jsonify({
+                "success": True,
+                "data": session
+            }), 200
+        else:
+            return jsonify({
+                "success": True,
+                "data": None,
+                "message": "No active session"
+            }), 200
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/session/end', methods=['POST'])
+def session_end():
+    """End the current billing session"""
+    try:
+        session_id = request.json.get('session_id') if request.json else None
+        if end_session(session_id):
+            return jsonify({
+                "success": True,
+                "message": "Session ended successfully",
+                "ended_at": datetime.now().isoformat()
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to end session"
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/session/reset', methods=['POST'])
+def session_reset_route():
+    """Reset current session data"""
+    try:
+        if reset_session():
+            return jsonify({
+                "success": True,
+                "message": "Session reset successfully"
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Failed to reset session"
+            }), 500
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/session/history', methods=['GET'])
+def session_history():
+    """Get session history from database"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''SELECT session_id, session_start, session_end, energy_consumed, cost, 
+                           duration_seconds, status 
+                    FROM session_tracking 
+                    ORDER BY session_start DESC 
+                    LIMIT ?''', (limit,))
+        rows = c.fetchall()
+        conn.close()
+        
+        sessions = [{
+            "session_id": row[0],
+            "session_start": row[1],
+            "session_end": row[2],
+            "energy_consumed": round(row[3], 4) if row[3] else 0,
+            "cost": round(row[4], 2) if row[4] else 0,
+            "duration_seconds": row[5],
+            "status": row[6]
+        } for row in rows]
+        
+        return jsonify({
+            "success": True,
+            "data": sessions,
+            "count": len(sessions)
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 # ================= MAIN =================
 

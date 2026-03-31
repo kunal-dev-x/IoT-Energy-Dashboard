@@ -119,3 +119,62 @@ export async function getCurrentBilling() {
   }
 }
 
+// ================= SESSION MANAGEMENT ENDPOINTS =================
+
+export async function startSession() {
+  // Start a new billing session
+  try {
+    const res = await apiClient.post('/session/start');
+    return res.data;
+  } catch (error) {
+    console.warn('⚠ Failed to start session:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function getCurrentSession() {
+  // Get current active session data
+  try {
+    const res = await apiClient.get('/session/current');
+    return res.data;
+  } catch (error) {
+    console.warn('⚠ Failed to fetch session:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function endSession(sessionId = null) {
+  // End the current billing session
+  try {
+    const res = await apiClient.post('/session/end', {
+      session_id: sessionId
+    });
+    return res.data;
+  } catch (error) {
+    console.warn('⚠ Failed to end session:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function resetSession() {
+  // Reset current session data
+  try {
+    const res = await apiClient.post('/session/reset');
+    return res.data;
+  } catch (error) {
+    console.warn('⚠ Failed to reset session:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function getSessionHistory(limit = 50) {
+  // Get session history from database
+  try {
+    const res = await apiClient.get(`/session/history?limit=${limit}`);
+    return res.data;
+  } catch (error) {
+    console.warn('⚠ Failed to fetch session history:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
