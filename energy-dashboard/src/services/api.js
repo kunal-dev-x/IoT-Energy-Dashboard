@@ -57,8 +57,7 @@ export async function fetchDailyEnergy(days = 7) {
 
 export async function fetchHourlyPower(hours = 24) {
   try {
-    const res = await apiClient.get(`/history/daily?days=1`);
-    // Transform daily data to hourly if needed, or return empty for chart
+    const res = await apiClient.get(`/waveform?limit=${hours}`);
     return res.data;
   } catch (error) {
     console.warn('Failed to fetch hourly power:', error);
@@ -89,3 +88,34 @@ export function mockMetrics() {
     cost: rand(5, 25)
   };
 }
+
+// ================= BILLING DATA SAVE ENDPOINTS =================
+
+export async function saveBillingData(billingData) {
+  // Save real-time billing data point to database
+  try {
+    const res = await apiClient.post('/billing/save-hourly', {
+      voltage: billingData.voltage || 0,
+      current: billingData.current || 0,
+      power: billingData.power || 0,
+      energy: billingData.energy || 0,
+      cost: billingData.cost || 0,
+    });
+    return res.data;
+  } catch (error) {
+    console.warn('⚠ Failed to save billing data:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function getCurrentBilling() {
+  // Get current live billing data with cost calculations
+  try {
+    const res = await apiClient.get('/billing/current');
+    return res.data;
+  } catch (error) {
+    console.warn('⚠ Failed to fetch current billing:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+

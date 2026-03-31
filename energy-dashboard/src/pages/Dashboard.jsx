@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
-import { FiActivity, FiBarChart2, FiDollarSign, FiPower, FiTrendingUp, FiZap } from 'react-icons/fi';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { FiActivity, FiBarChart2, FiDollarSign, FiPower, FiTrendingUp, FiZap, FiPause, FiPlay } from 'react-icons/fi';
 import DataCard from '../components/DataCard';
 import Charts from '../components/Charts';
 import Controls from '../components/Controls';
-import { fetchMetrics, sendControl, mockMetrics, fetchDailyEnergy, fetchHourlyPower } from '../services/api';
+import { fetchMetrics, sendControl, mockMetrics, fetchDailyEnergy } from '../services/api';
 
 // ================= SAMPLE DATA FOR CHARTS =================
 function generateSamplePowerData() {
@@ -56,39 +56,74 @@ const switchesDefault = {
 };
 
 export default function Dashboard() {
+  // ===== METRIC STATE =====
   const [metrics, setMetrics] = useState({
     voltage: 0,
     current: 0,
     power: 0,
     energy: 0,
-    frequency: 0,
-    pf: 0,
+    frequency: 50,
+    pf: 0.95,
     cost: 0,
   });
 
-  const [powerData, setPowerData] = useState(generateSamplePowerData());
-  const [vcData, setVcData] = useState(generateSampleVCData());
+  // ===== CHART DATA STATE =====
+  const [powerData, setPowerData] = useState([]);
+  const [vcData, setVcData] = useState([]);
   const [energyData, setEnergyData] = useState(generateSampleEnergyData());
   const [switchStates, setSwitchStates] = useState(switchesDefault);
 
-  // Fetch real-time metrics from API or fallback to mock
+  // ===== LIVE MODE STATE =====
+  const [liveMode, setLiveMode] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('Connecting...');
+  
+  // ===== REFS FOR CHART DATA BUFFER =====
+  const powerBufferRef = useRef([]);
+  const vcBufferRef = useRef([]);
+  const MAX_POINTS = 50; // Keep last 50 data points (~90 seconds at 1.5s interval)
+
+  // ===== FETCH DAILY ENERGY (ONCE ON MOUNT) =====
   useEffect(() => {
-    const fetchAndUpdate = async () => {
+    const fetchDailyData = async () => {
+      try {
+        const dailyResult = await fetchDailyEnergy(7);
+        const dailyData = dailyResult?.data || dailyResult || [];
+        if (dailyData && Array.isArray(dailyData) && dailyData.length > 0) {
+          setEnergyData(dailyData.map(d => ({
+            day: new Date(d.date || d.timestamp).toLocaleDateString('en-US', { weekday: 'short' }),
+            energy: parseFloat((d.energy_kwh || 0).toFixed(1))
+          })));
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to fetch daily energy, using sample data:', err.message);
+        // Keep default sample data
+      }
+    };
+
+    fetchDailyData();
+  }, []); // Run once on mount
+
+  // ===== LIVE METRICS POLLING (1.5 seconds) =====
+  useEffect(() => {
+    if (!liveMode) return; // Skip polling if live mode is off
+
+    const fetchLiveMetrics = async () => {
       try {
         const data = await fetchMetrics();
-        
-        // Update with real API data
+
+        // ✅ Update metrics display (store as numbers, not strings)
         setMetrics({
-          voltage: data.voltage || 0,
-          current: data.current || 0,
-          power: data.power || 0,
-          energy: data.energy || 0,
-          frequency: data.frequency || 50,
-          pf: data.pf || 0.95,
-          cost: data.cost || 0,
+          voltage: parseFloat(data.voltage || 0),
+          current: parseFloat(data.current || 0),
+          power: parseInt(data.power || 0),
+          energy: parseFloat(data.energy || 0),
+          frequency: parseFloat(data.frequency || 50),
+          pf: parseFloat(data.pf || 0.95),
+          cost: parseFloat(data.cost || 0),
         });
 
-        // Sync relay state from backend if available
+        // ✅ Sync relay state from backend
         if (data.relay_state) {
           setSwitchStates((prev) => ({
             ...prev,
@@ -96,69 +131,118 @@ export default function Dashboard() {
           }));
         }
 
-        // Fetch chart data with fallback to sample data
-        try {
-          const dailyResult = await fetchDailyEnergy(7);
-          const dailyData = dailyResult?.data || dailyResult || [];
-          if (dailyData && Array.isArray(dailyData) && dailyData.length > 0) {
-            setEnergyData(dailyData.map(d => ({
-              day: new Date(d.date || d.timestamp).toLocaleDateString('en-US', { weekday: 'short' }),
-              energy: parseFloat((d.energy_kwh || 0).toFixed(1))
-            })));
-          } else {
-            setEnergyData(generateSampleEnergyData());
-          }
-        } catch (err) {
-          console.warn('Failed to fetch daily energy, using sample data:', err);
-          setEnergyData(generateSampleEnergyData());
+        // ✅ ADD TO POWER CHART BUFFER (Real-time every 1.5 seconds)
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        
+        const powerPoint = {
+          time: timeStr,
+          power: Math.round(data.power || 0),
+          timestamp: now.getTime(),
+        };
+        
+        powerBufferRef.current.push(powerPoint);
+        if (powerBufferRef.current.length > MAX_POINTS) {
+          powerBufferRef.current.shift(); // Remove oldest point
         }
+        setPowerData([...powerBufferRef.current]); // Trigger re-render with copy
 
-        try {
-          const hourlyResult = await fetchHourlyPower(24);
-          const hourlyData = hourlyResult?.data || hourlyResult || [];
-          if (hourlyData && Array.isArray(hourlyData) && hourlyData.length > 0) {
-            setPowerData(hourlyData.map(d => ({
-              time: new Date(d.date || d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-              power: Math.max(0, Math.min(2200, parseFloat(d.avg_power || d.power || 0)))
-            })));
-          } else {
-            setPowerData(generateSamplePowerData());
-          }
-        } catch (err) {
-          console.warn('Failed to fetch hourly power, using sample data:', err);
-          setPowerData(generateSamplePowerData());
+        // ✅ ADD TO VOLTAGE vs CURRENT CHART BUFFER (Real-time)
+        const vcPoint = {
+          time: timeStr,
+          voltage: parseFloat(data.voltage || 0).toFixed(1),
+          current: parseFloat(data.current || 0).toFixed(2),
+          timestamp: now.getTime(),
+        };
+        
+        vcBufferRef.current.push(vcPoint);
+        if (vcBufferRef.current.length > MAX_POINTS) {
+          vcBufferRef.current.shift(); // Remove oldest point
         }
+        setVcData([...vcBufferRef.current]); // Trigger re-render with copy
+
+        // ✅ Update connection status
+        setConnectionStatus('Online ✓');
+        setLastUpdate(now);
+
+        console.log('✓ Live metrics fetched:', {
+          power: data.power,
+          voltage: data.voltage,
+          current: data.current,
+          time: timeStr
+        });
+
       } catch (error) {
-        console.warn('⚠️  Backend unavailable, using mock data:', error.message);
-        // Fallback to mock metrics when backend is down
+        console.error('⚠️ Error fetching live metrics:', error.message);
+        setConnectionStatus('Offline - Using Mock Data');
+        
+        // Fallback to mock data
         const mockData = mockMetrics();
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
         setMetrics({
           voltage: mockData.voltage,
           current: mockData.current,
-          power: mockData.power,
+          power: Math.round(mockData.power),
           energy: mockData.energy,
           frequency: mockData.frequency,
           pf: mockData.pf,
           cost: mockData.cost,
         });
+
+        // Add to power buffer
+        powerBufferRef.current.push({
+          time: timeStr,
+          power: Math.round(mockData.power),
+          timestamp: now.getTime(),
+        });
+        if (powerBufferRef.current.length > MAX_POINTS) powerBufferRef.current.shift();
+        setPowerData([...powerBufferRef.current]);
+
+        // Add to VC buffer
+        vcBufferRef.current.push({
+          time: timeStr,
+          voltage: mockData.voltage.toFixed(1),
+          current: mockData.current.toFixed(2),
+          timestamp: now.getTime(),
+        });
+        if (vcBufferRef.current.length > MAX_POINTS) vcBufferRef.current.shift();
+        setVcData([...vcBufferRef.current]);
+
+        setLastUpdate(now);
       }
     };
 
-    // Fetch immediately on mount
-    fetchAndUpdate();
+    // Fetch immediately on mount or when live mode turns on
+    fetchLiveMetrics();
 
-    // Fetch at intervals (2.5 second update)
-    const interval = setInterval(fetchAndUpdate, 2500);
+    // Set up polling interval (1.5 seconds for smooth real-time updates)
+    const interval = setInterval(fetchLiveMetrics, 1500);
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => clearInterval(interval); // Cleanup on unmount or when live mode turns off
+
+  }, [liveMode]); // Re-run effect when liveMode changes
 
   const cards = useMemo(
     () =>
-      cardConfig.map((c) => ({
-        ...c,
-        value: c.key === 'cost' ? metrics[c.key].toFixed(2) : metrics[c.key],
-      })),
+      cardConfig.map((c) => {
+        let value = metrics[c.key];
+        
+        // Format numbers with appropriate decimal places
+        if (typeof value === 'number') {
+          if (c.key === 'cost') value = value.toFixed(2);
+          else if (c.key === 'pf') value = value.toFixed(3);
+          else if (c.key === 'power') value = Math.round(value);
+          else if (c.key === 'energy') value = value.toFixed(2);
+          else value = value.toFixed(2);
+        }
+        
+        return {
+          ...c,
+          value
+        };
+      }),
     [metrics]
   );
 
@@ -179,6 +263,35 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8 pb-10">
+      {/* ===== HEADER WITH LIVE STATUS ===== */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Live Dashboard</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Status: <span className={connectionStatus === 'Online ✓' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+              {connectionStatus}
+            </span>
+            {lastUpdate && (
+              <> | Last Update: <span className="text-blue-400">{lastUpdate.toLocaleTimeString()}</span></>
+            )}
+          </p>
+        </div>
+
+        {/* Live Mode Toggle */}
+        <button
+          onClick={() => setLiveMode(!liveMode)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition ${
+            liveMode
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50'
+              : 'bg-slate-500/20 text-slate-300 border border-slate-500/50'
+          }`}
+        >
+          {liveMode ? <FiPlay size={18} /> : <FiPause size={18} />}
+          {liveMode ? 'Live: ON' : 'Live: OFF'}
+        </button>
+      </div>
+
+      {/* ===== METRIC CARDS SECTION ===== */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {cards.map((card) => (
           <DataCard

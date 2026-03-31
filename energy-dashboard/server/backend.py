@@ -514,6 +514,49 @@ def history_all_years():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ================= BILLING DATA SAVE ENDPOINT =================
+
+@app.route('/billing/save-hourly', methods=['POST'])
+def save_billing_hourly():
+    """Save real-time billing data point to database"""
+    try:
+        data = request.json
+        voltage = data.get('voltage', 0)
+        current = data.get('current', 0)
+        power = data.get('power', 0)
+        energy = data.get('energy', 0)
+        cost = data.get('cost', 0)
+        
+        save_hourly_data(voltage, current, power, energy, cost)
+        
+        return jsonify({
+            "success": True,
+            "message": "Billing data saved successfully",
+            "data": {
+                "voltage": voltage,
+                "current": current,
+                "power": power,
+                "energy": energy,
+                "cost": cost,
+                "timestamp": datetime.now().isoformat()
+            }
+        }), 201
+    except Exception as e:
+        print(f"⚠ Error saving billing data:", e)
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+@app.route('/billing/current', methods=['GET'])
+def get_current_billing():
+    """Get current live billing data with cost calculations"""
+    return jsonify({
+        "success": True,
+        "data": latest_data,
+        "timestamp": datetime.now().isoformat()
+    }), 200
+
 # ================= MAIN =================
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   BarChart,
   Bar,
@@ -28,72 +28,24 @@ const tooltipStyle = {
   color: '#e2e8f0',
 };
 
-// Sample Monthly Data
-const monthlyDataSample = [
-  { month: 'Jan', energy_kwh: 420, cost: 3570, avg_power: 580 },
-  { month: 'Feb', energy_kwh: 385, cost: 3273, avg_power: 540 },
-  { month: 'Mar', energy_kwh: 510, cost: 4335, avg_power: 650 },
-  { month: 'Apr', energy_kwh: 465, cost: 3953, avg_power: 620 },
-  { month: 'May', energy_kwh: 580, cost: 4930, avg_power: 720 },
-  { month: 'Jun', energy_kwh: 625, cost: 5313, avg_power: 780 },
-  { month: 'Jul', energy_kwh: 680, cost: 5780, avg_power: 850 },
-  { month: 'Aug', energy_kwh: 665, cost: 5653, avg_power: 830 },
-  { month: 'Sep', energy_kwh: 545, cost: 4633, avg_power: 680 },
-  { month: 'Oct', energy_kwh: 475, cost: 4038, avg_power: 590 },
-  { month: 'Nov', energy_kwh: 420, cost: 3570, avg_power: 520 },
-  { month: 'Dec', energy_kwh: 490, cost: 4165, avg_power: 610 },
+// ===== FALLBACK DATA =====
+const FALLBACK_MONTHLY = [
+  { month: '2026-01', energy_kwh: 362.13, cost: 3078.13, avg_power: 500, max_power: 850 },
+  { month: '2026-02', energy_kwh: 313.96, cost: 2668.67, avg_power: 460, max_power: 820 },
+  { month: '2026-03', energy_kwh: 265.66, cost: 2258.11, avg_power: 420, max_power: 780 },
 ];
 
-// Sample Daily Data
-const dailyDataSample = [
-  { date: 'Mar 20', energy_kwh: 15.2, cost: 129.2, avg_power: 630 },
-  { date: 'Mar 21', energy_kwh: 14.8, cost: 125.8, avg_power: 615 },
-  { date: 'Mar 22', energy_kwh: 16.5, cost: 140.3, avg_power: 680 },
-  { date: 'Mar 23', energy_kwh: 14.1, cost: 119.9, avg_power: 587 },
-  { date: 'Mar 24', energy_kwh: 17.3, cost: 147.1, avg_power: 720 },
-  { date: 'Mar 25', energy_kwh: 16.8, cost: 142.8, avg_power: 700 },
-  { date: 'Mar 26', energy_kwh: 15.5, cost: 131.8, avg_power: 645 },
-  { date: 'Mar 27', energy_kwh: 18.2, cost: 154.7, avg_power: 756 },
-  { date: 'Mar 28', energy_kwh: 16.9, cost: 143.7, avg_power: 704 },
-  { date: 'Mar 29', energy_kwh: 14.3, cost: 121.6, avg_power: 596 },
-  { date: 'Mar 30', energy_kwh: 15.7, cost: 133.5, avg_power: 652 },
-];
-
-// Hourly data sample
-const hourlyDataSample = [
-  { hour: '00:00', power: 250 },
-  { hour: '01:00', power: 200 },
-  { hour: '02:00', power: 180 },
-  { hour: '03:00', power: 170 },
-  { hour: '04:00', power: 160 },
-  { hour: '05:00', power: 280 },
-  { hour: '06:00', power: 450 },
-  { hour: '07:00', power: 680 },
-  { hour: '08:00', power: 750 },
-  { hour: '09:00', power: 820 },
-  { hour: '10:00', power: 900 },
-  { hour: '11:00', power: 950 },
-  { hour: '12:00', power: 1020 },
-  { hour: '13:00', power: 980 },
-  { hour: '14:00', power: 920 },
-  { hour: '15:00', power: 850 },
-  { hour: '16:00', power: 780 },
-  { hour: '17:00', power: 920 },
-  { hour: '18:00', power: 1050 },
-  { hour: '19:00', power: 1100 },
-  { hour: '20:00', power: 950 },
-  { hour: '21:00', power: 720 },
-  { hour: '22:00', power: 520 },
-  { hour: '23:00', power: 380 },
-];
-
-// Device consumption breakdown
-const deviceDataSample = [
-  { name: 'AC', value: 35, color: '#22d3ee' },
-  { name: 'Lights', value: 15, color: '#a855f7' },
-  { name: 'Appliances', value: 30, color: '#ec4899' },
-  { name: 'Electronics', value: 20, color: '#fbbf24' },
-];
+const FALLBACK_DAILY = Array.from({ length: 30 }, (_, i) => {
+  const date = new Date();
+  date.setDate(date.getDate() - (29 - i));
+  return {
+    date: date.toISOString().split('T')[0],
+    energy_kwh: 8 + Math.random() * 4,
+    cost: 68 + Math.random() * 34,
+    avg_power: 350 + Math.random() * 150,
+    max_power: 500 + Math.random() * 300,
+  };
+});
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
@@ -101,7 +53,7 @@ function CustomTooltip({ active, payload }) {
     <div style={tooltipStyle}>
       {payload.map((entry) => (
         <p key={entry.name} className="text-sm" style={{ color: entry.color }}>
-          {entry.name}: <span className="font-semibold">{entry.value}</span>
+          {entry.name}: <span className="font-semibold">{typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value}</span>
         </p>
       ))}
     </div>
@@ -109,23 +61,151 @@ function CustomTooltip({ active, payload }) {
 }
 
 export default function Statistics() {
-  const [activeTab, setActiveTab] = useState('monthly');
+  const [monthlyData, setMonthlyData] = useState([]);
+  const [dailyData, setDailyData] = useState([]);
+  const [hourlyData, setHourlyData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState('api');
+  const hourlyBufferRef = useRef([]);
 
-  const totalEnergy = monthlyDataSample.reduce((sum, m) => sum + m.energy_kwh, 0);
-  const totalCost = monthlyDataSample.reduce((sum, m) => sum + m.cost, 0);
-  const avgMonthlyPower = Math.round(
-    monthlyDataSample.reduce((sum, m) => sum + m.avg_power, 0) / monthlyDataSample.length
-  );
+  // Device consumption breakdown (static)
+  const deviceDataSample = [
+    { name: 'AC', value: 35, color: '#22d3ee' },
+    { name: 'Lights', value: 15, color: '#a855f7' },
+    { name: 'Appliances', value: 30, color: '#ec4899' },
+    { name: 'Electronics', value: 20, color: '#fbbf24' },
+  ];
+
+  // ===== FETCH HISTORICAL DATA (ONCE ON MOUNT) =====
+  useEffect(() => {
+    const fetchStatisticsData = async () => {
+      try {
+        setLoading(true);
+        let finalMonthly = [];
+        let finalDaily = [];
+
+        // Fetch monthly data
+        try {
+          const monthlyResponse = await fetch('http://localhost:5000/history/monthly?months=12');
+          const monthlyJson = await monthlyResponse.json();
+          
+          if (monthlyJson.data && monthlyJson.data.length > 0) {
+            finalMonthly = monthlyJson.data;
+            setDataSource('api');
+            console.log('✓ Fetched monthly data from API:', finalMonthly.length, 'months');
+          } else {
+            finalMonthly = FALLBACK_MONTHLY;
+            console.log('⚠ Using fallback monthly data');
+          }
+        } catch (err) {
+          console.error('⚠️ Error fetching monthly data:', err);
+          finalMonthly = FALLBACK_MONTHLY;
+        }
+
+        // Fetch daily data
+        try {
+          const dailyResponse = await fetch('http://localhost:5000/history/daily?days=30');
+          const dailyJson = await dailyResponse.json();
+          
+          if (dailyJson.data && dailyJson.data.length > 0) {
+            finalDaily = dailyJson.data;
+            console.log('✓ Fetched daily data from API:', finalDaily.length, 'days');
+          } else {
+            finalDaily = FALLBACK_DAILY;
+            console.log('⚠ Using fallback daily data');
+          }
+        } catch (err) {
+          console.error('⚠️ Error fetching daily data:', err);
+          finalDaily = FALLBACK_DAILY;
+        }
+
+        // Format monthly data
+        const formattedMonthly = finalMonthly.map(item => ({
+          month: new Date(item.month + '-01').toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+          energy_kwh: parseFloat(item.energy_kwh) || 0,
+          cost: parseFloat(item.cost) || 0,
+          avg_power: parseFloat(item.avg_power) || 0,
+          max_power: parseFloat(item.max_power) || 0,
+        }));
+        setMonthlyData(formattedMonthly);
+
+        // Format daily data
+        const formattedDaily = finalDaily.map(item => ({
+          date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          energy_kwh: parseFloat(item.energy_kwh) || 0,
+          cost: parseFloat(item.cost) || 0,
+          avg_power: parseFloat(item.avg_power) || 0,
+          max_power: parseFloat(item.max_power) || 0,
+        }));
+        setDailyData(formattedDaily);
+
+        console.log('✓ Statistics data loaded:', {
+          monthly: formattedMonthly.length,
+          daily: formattedDaily.length,
+        });
+
+        setLoading(false);
+      } catch (error) {
+        console.error('⚠️ Error in fetchStatisticsData:', error);
+        setMonthlyData(FALLBACK_MONTHLY);
+        setDailyData(FALLBACK_DAILY);
+        setLoading(false);
+      }
+    };
+
+    fetchStatisticsData();
+  }, []);
+
+  // ===== LIVE POLLING FOR HOURLY DATA (every 2 seconds) =====
+  useEffect(() => {
+    const fetchHourlyData = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/waveform?limit=50');
+        const json = await response.json();
+
+        if (json.data && json.data.length > 0) {
+          const formattedHourly = json.data.map(item => ({
+            time: item.time || '00:00',
+            power: parseFloat(item.power) || 0,
+          }));
+
+          hourlyBufferRef.current = formattedHourly;
+          setHourlyData([...formattedHourly]);
+        }
+      } catch (error) {
+        console.error('⚠️ Error fetching hourly data:', error);
+        // Keep previous data on error
+      }
+    };
+
+    // Fetch immediately
+    fetchHourlyData();
+
+    // Poll every 2 seconds
+    const interval = setInterval(fetchHourlyData, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // ===== CALCULATE STATISTICS FROM DAILY DATA =====
+  const totalEnergy = dailyData.reduce((sum, day) => sum + (day.energy_kwh || 0), 0);
+  const totalCost = dailyData.reduce((sum, day) => sum + (day.cost || 0), 0);
+  const avgDailyPower = dailyData.length > 0 
+    ? Math.round(dailyData.reduce((sum, day) => sum + (day.avg_power || 0), 0) / dailyData.length)
+    : 0;
 
   return (
     <div className="space-y-6 pb-10">
-      {/* Header Stats */}
+      {/* ===== SUMMARY CARDS ===== */}
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="glass rounded-2xl p-6 shadow-glow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Annual Energy</p>
-              <p className="text-3xl font-bold text-white mt-2">{totalEnergy.toFixed(0)} <span className="text-lg text-slate-400">kWh</span></p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Total Energy (30d)</p>
+              <p className="text-3xl font-bold text-white mt-2">
+                {totalEnergy.toFixed(1)} <span className="text-lg text-slate-400">kWh</span>
+              </p>
+              <p className="text-xs text-slate-500 mt-2">Last 30 days</p>
             </div>
             <FiTrendingUp className="w-8 h-8 text-emerald-400" />
           </div>
@@ -134,8 +214,9 @@ export default function Statistics() {
         <div className="glass rounded-2xl p-6 shadow-glow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Annual Cost</p>
-              <p className="text-3xl font-bold text-white mt-2">₹<span className="text-3xl">{totalCost.toFixed(0)}</span></p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Total Cost (30d)</p>
+              <p className="text-3xl font-bold text-white mt-2">₹{totalCost.toFixed(0)}</p>
+              <p className="text-xs text-slate-500 mt-2">₹{(totalCost / 30).toFixed(0)}/day avg</p>
             </div>
             <FiBarChart2 className="w-8 h-8 text-pink-400" />
           </div>
@@ -144,40 +225,35 @@ export default function Statistics() {
         <div className="glass rounded-2xl p-6 shadow-glow">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Avg Power</p>
-              <p className="text-3xl font-bold text-white mt-2">{avgMonthlyPower} <span className="text-lg text-slate-400">W</span></p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Avg Power (30d)</p>
+              <p className="text-3xl font-bold text-white mt-2">
+                {avgDailyPower} <span className="text-lg text-slate-400">W</span>
+              </p>
+              <p className="text-xs text-slate-500 mt-2">Daily average</p>
             </div>
             <FiCalendar className="w-8 h-8 text-cyan-400" />
           </div>
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="glass rounded-2xl p-4 shadow-glow">
-        <div className="flex gap-2 border-b border-slate-700">
-          {['monthly', 'daily', 'hourly', 'devices'].map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 font-semibold capitalize transition ${
-                activeTab === tab
-                  ? 'text-cyan-400 border-b-2 border-cyan-400'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+      {/* ===== MONTHLY STATISTICS SECTION ===== */}
+      <div className="glass rounded-2xl p-5 shadow-glow">
+        <div className="mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Analysis</p>
+              <h3 className="text-lg font-semibold text-white">Monthly Statistics</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {dataSource === 'api' ? '✓ Real data from backend' : '⚠ Demo data (API fallback)'}
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* Monthly Chart */}
-      {activeTab === 'monthly' && (
-        <div className="glass rounded-2xl p-5 shadow-glow">
-          <h3 className="text-lg font-semibold text-white mb-4">Monthly Energy Usage & Cost</h3>
-          <div className="h-80">
+        <div className="h-80">
+          {monthlyData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyDataSample} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <BarChart data={monthlyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="energyGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#a855f7" stopOpacity={0.9} />
@@ -190,25 +266,33 @@ export default function Statistics() {
                 </defs>
                 <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
                 <XAxis dataKey="month" tick={axisStyle} />
-                <YAxis yAxisId="left" tick={axisStyle} domain={[0, 700]} />
-                <YAxis yAxisId="right" orientation="right" tick={axisStyle} domain={[0, 6000]} />
+                <YAxis yAxisId="left" tick={axisStyle} label={{ value: 'Energy (kWh)', angle: -90, position: 'insideLeft' }} />
+                <YAxis yAxisId="right" orientation="right" tick={axisStyle} label={{ value: 'Cost (₹)', angle: 90, position: 'insideRight' }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend wrapperStyle={{ color: '#cbd5e1' }} />
                 <Bar yAxisId="left" dataKey="energy_kwh" fill="url(#energyGrad)" name="Energy (kWh)" radius={[8, 8, 0, 0]} />
                 <Bar yAxisId="right" dataKey="cost" fill="url(#costGrad)" name="Cost (₹)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-slate-400">
+              {loading ? '⏳ Loading monthly data...' : '⚠️ No monthly data available'}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Daily Chart */}
-      {activeTab === 'daily' && (
-        <div className="glass rounded-2xl p-5 shadow-glow">
-          <h3 className="text-lg font-semibold text-white mb-4">Last 11 Days Energy Consumption</h3>
-          <div className="h-80">
+      {/* ===== DAILY ENERGY SECTION ===== */}
+      <div className="glass rounded-2xl p-5 shadow-glow">
+        <div className="mb-4">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Consumption Pattern</p>
+          <h3 className="text-lg font-semibold text-white">Daily Energy Consumption (Last 30 Days)</h3>
+        </div>
+
+        <div className="h-80">
+          {dailyData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyDataSample} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+              <AreaChart data={dailyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="dailyGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.7} />
@@ -217,68 +301,97 @@ export default function Statistics() {
                 </defs>
                 <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
                 <XAxis dataKey="date" tick={axisStyle} />
-                <YAxis tick={axisStyle} domain={[0, 20]} />
+                <YAxis tick={axisStyle} label={{ value: 'Energy (kWh)', angle: -90, position: 'insideLeft' }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="energy_kwh" stroke="#22d3ee" fill="url(#dailyGrad)" strokeWidth={2} name="Energy (kWh)" />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-slate-400">
+              {loading ? '⏳ Loading daily data...' : '⚠️ No daily data available'}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
-      {/* Hourly Chart */}
-      {activeTab === 'hourly' && (
+      {/* ===== HOURLY POWER DISTRIBUTION (LIVE) ===== */}
+      <div className="glass rounded-2xl p-5 shadow-glow">
+        <div className="mb-4">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Real-time</p>
+          <h3 className="text-lg font-semibold text-white">Hourly Power Distribution (Live - Last 50 Points)</h3>
+          <p className="text-xs text-slate-400 mt-1">🔴 Updates every 2 seconds</p>
+        </div>
+
+        <div className="h-80">
+          {hourlyData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={hourlyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
+                <XAxis dataKey="time" tick={axisStyle} />
+                <YAxis tick={axisStyle} label={{ value: 'Power (W)', angle: -90, position: 'insideLeft' }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Line type="monotone" dataKey="power" stroke="#fbbf24" strokeWidth={3} dot={false} name="Power (W)" isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full text-slate-400">
+              ⏳ Waiting for live data...
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===== DEVICE BREAKDOWN ===== */}
+      <div className="grid gap-6 lg:grid-cols-2">
         <div className="glass rounded-2xl p-5 shadow-glow">
-          <h3 className="text-lg font-semibold text-white mb-4">Today's Hourly Power Distribution</h3>
+          <h3 className="text-lg font-semibold text-white mb-4">Device Consumption %</h3>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={hourlyDataSample} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke={gridColor} strokeDasharray="3 3" />
-                <XAxis dataKey="hour" tick={axisStyle} />
-                <YAxis tick={axisStyle} domain={[0, 1200]} />
+              <PieChart>
+                <Pie 
+                  data={deviceDataSample} 
+                  cx="50%" 
+                  cy="50%" 
+                  labelLine={false} 
+                  label={({ name, value }) => `${name} ${value}%`} 
+                  outerRadius={80} 
+                  dataKey="value"
+                  startAngle={90}
+                  endAngle={-270}
+                >
+                  {deviceDataSample.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
                 <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="power" stroke="#fbbf24" strokeWidth={3} dot={false} name="Power (W)" />
-              </LineChart>
+              </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
-      )}
 
-      {/* Device Breakdown */}
-      {activeTab === 'devices' && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="glass rounded-2xl p-5 shadow-glow">
-            <h3 className="text-lg font-semibold text-white mb-4">Device Consumption %</h3>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={deviceDataSample} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name} ${value}%`} outerRadius={80} fill="#8884d8" dataKey="value">
-                    {deviceDataSample.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="glass rounded-2xl p-5 shadow-glow flex flex-col justify-center">
-            <h3 className="text-lg font-semibold text-white mb-6">Device Details</h3>
-            <div className="space-y-4">
-              {deviceDataSample.map(device => (
-                <div key={device.name} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: device.color }} />
-                    <p className="text-slate-300">{device.name}</p>
-                  </div>
-                  <p className="font-semibold text-white">{device.value}%</p>
+        {/* Device Details Panel */}
+        <div className="glass rounded-2xl p-5 shadow-glow flex flex-col justify-center">
+          <h3 className="text-lg font-semibold text-white mb-6">Device Details</h3>
+          <div className="space-y-4">
+            {deviceDataSample.map(device => (
+              <div key={device.name} className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition">
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: device.color }} />
+                  <p className="text-slate-300 font-medium">{device.name}</p>
                 </div>
-              ))}
-            </div>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-white text-lg">{device.value}%</p>
+                  <p className="text-slate-400 text-sm">({Math.round(device.value / 100 * (totalEnergy * 1000))} Wh)</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 pt-6 border-t border-white/10">
+            <p className="text-xs text-slate-400">Total: {deviceDataSample.reduce((sum, d) => sum + d.value, 0)}% assigned load</p>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
+        
